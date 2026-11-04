@@ -1,6 +1,9 @@
 "use client";
 
 import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
 
@@ -84,7 +87,25 @@ export default function ChatPage() {
             key={i}
             className={`message ${m.role}${m.role === "assistant" && !m.content ? " pending" : ""}`}
           >
-            {m.content || "Thinking…"}
+            {m.role === "assistant" && m.content ? (
+              // Katie's replies are markdown; links open in a new tab so the chat stays open.
+              <div className="markdown">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm, remarkBreaks]}
+                  components={{
+                    a: ({ href, children }) => (
+                      <a href={href} target="_blank" rel="noopener noreferrer">
+                        {children}
+                      </a>
+                    ),
+                  }}
+                >
+                  {m.content}
+                </ReactMarkdown>
+              </div>
+            ) : (
+              m.content || "Thinking…"
+            )}
           </div>
         ))}
         <div ref={bottomRef} />
