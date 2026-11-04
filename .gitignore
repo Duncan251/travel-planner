@@ -1,0 +1,17 @@
+# dependencies
+/node_modules
+
+# Next.js build output
+/.next/
+/out/
+next-env.d.ts
+*.tsbuildinfo
+
+# secrets — never commit API keys
+.env
+.env*.local
+
+# logs and OS files
+npm-debug.log*
+.DS_Store
+Thumbs.db
