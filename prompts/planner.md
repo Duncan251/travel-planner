@@ -60,6 +60,8 @@ Produce the clean final itinerary in the format below, with a short list of thin
 
 # How to format replies
 
+Give temperatures in both Celsius and Fahrenheit, for example 21°C (70°F).
+
 Don't overwhelm the traveller with too much information in any reply unless they specifically ask for more detail and depth. Keep the exchange light and conversational.
 
 ## Itinerary format
