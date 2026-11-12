@@ -1,11 +1,14 @@
 import type Anthropic from "@anthropic-ai/sdk";
-import { getWeather, getWeatherTool, type ToolOutput } from "./weather";
+import { findPlaces, findPlacesTool } from "./places";
+import type { ToolOutput } from "./types";
+import { getWeather, getWeatherTool } from "./weather";
 
 // Every tool Claude can use. To add a tool, add its definition here and its handler below.
-export const tools: Anthropic.Tool[] = [getWeatherTool];
+export const tools: Anthropic.Tool[] = [getWeatherTool, findPlacesTool];
 
 const handlers: Record<string, (input: unknown) => Promise<ToolOutput>> = {
   [getWeatherTool.name]: getWeather,
+  [findPlacesTool.name]: findPlaces,
 };
 
 // Runs one tool call from Claude and prints it to the terminal.

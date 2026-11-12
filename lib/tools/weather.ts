@@ -1,4 +1,5 @@
 import type Anthropic from "@anthropic-ai/sdk";
+import type { ToolOutput } from "./types";
 
 // Weather for a place and date range, using Open-Meteo's free APIs (no key needed).
 // Within the forecast window it returns the daily forecast; beyond it, typical
@@ -35,8 +36,6 @@ If the result is an error (place not found, or the weather service unavailable),
     additionalProperties: false,
   },
 };
-
-export type ToolOutput = { content: string; isError: boolean };
 
 type Place = {
   name: string;
