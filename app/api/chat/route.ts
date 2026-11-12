@@ -1,6 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { describePreferences, type Profile } from "@/lib/profile";
+import { createClient, currentUser } from "@/lib/supabase/server";
 import { runTool, tools } from "@/lib/tools";
 
 // This file runs only on the server. The API key is read here and never sent to the browser.
@@ -10,6 +12,8 @@ const MODEL = "claude-haiku-5-5";
 const PROMPT_PATH = path.join(process.cwd(), "prompts", "planner.md");
 // Safety limit: how many rounds of tool calls one reply may make before we stop it.
 const MAX_TOOL_ROUNDS = 6;
+// How many messages each signed-in user may send per day (days run midnight to midnight UTC).
+const DAILY_MESSAGE_LIMIT = 50;
 
 export async function POST(req: Request) {
   if (!process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY.startsWith("your-")) {
@@ -18,13 +22,38 @@ export async function POST(req: Request) {
     });
   }
 
+  // Only signed-in users can chat. This connection acts as them, so the database's
+  // row-level security applies to everything below.
+  const supabase = await createClient();
+  const user = await currentUser(supabase);
+  if (!user) return new Response("Please sign in to chat.", { status: 401 });
+
+  // Count this message against the user's daily limit (checked and counted in one step).
+  const { data: usage, error: usageError } = await supabase
+    .rpc("use_message", { daily_limit: DAILY_MESSAGE_LIMIT })
+    .single();
+  if (usageError) {
+    console.error("Message limit check failed:", usageError.message);
+    return new Response("Sorry, something went wrong on our side. Please try again shortly.", { status: 500 });
+  }
+  if (!usage.allowed) {
+    return new Response(
+      `You've reached today's limit of ${DAILY_MESSAGE_LIMIT} messages. It resets at midnight UTC.`,
+      { status: 429 },
+    );
+  }
+
   const { messages } = (await req.json()) as { messages: Anthropic.MessageParam[] };
 
   // Re-read on every request so edits to prompts/planner.md apply without a restart.
-  // Today's date goes last so Katie can work out "next weekend" and the forecast window.
+  // Then the user's saved preferences, and today's date last so Katie can work out
+  // "next weekend" and the forecast window.
   const persona = (await readFile(PROMPT_PATH, "utf8")).trim();
+  const { data: profile } = await supabase.from("profiles").select("*").eq("user_id", user.id).maybeSingle();
   const today = new Date().toLocaleDateString("en-GB", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-  const system = `${persona}\n\nToday's date is ${today}.`;
+  const system = [persona, preferencesSection(profile as Profile | null), `Today's date is ${today}.`]
+    .filter(Boolean)
+    .join("\n\n");
 
   const client = new Anthropic(); // picks up ANTHROPIC_API_KEY from the environment
   const conversation: Anthropic.MessageParam[] = [...messages];
@@ -103,4 +132,21 @@ export async function POST(req: Request) {
   return new Response(body, {
     headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-cache" },
   });
+}
+
+// The user's saved preferences for the system prompt, with how Katie should use them.
+function preferencesSection(profile: Profile | null): string {
+  const lines = describePreferences(profile);
+  if (lines.length === 0) {
+    return "# This traveller's saved preferences\n\nThey haven't saved any preferences yet, so ask about their travel style as usual. They can add preferences any time from the Preferences link.";
+  }
+  return [
+    "# This traveller's saved preferences",
+    "",
+    "They saved these in their profile, in their own words:",
+    "",
+    ...lines,
+    "",
+    "Treat these as already known. Don't ask for them again. When one matters for this trip, confirm it briefly in passing (for example \"Still happy with self-guided?\") and adjust if they say it's changed. Don't read the whole list back to them. Anything they say in this conversation takes priority over the saved preferences.",
+  ].join("\n");
 }
