@@ -53,13 +53,65 @@ body:has(.chat) {
 }
 
 .site-footer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 18px;
   padding: 8px 16px;
-  text-align: center;
-  font-size: 0.8rem;
+  font-size: 0.85rem;
 }
 
 .site-footer a {
   color: var(--muted);
+}
+
+/* Help: the footer button and the support chat panel */
+.site-footer .help-button {
+  font-weight: 600;
+}
+
+.help-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  width: min(400px, 100vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border-left: 1px solid var(--border);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
+  font-size: 1rem;
+  text-align: left;
+}
+
+.help-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.help-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.help-header .link-button {
+  font-size: 1.1rem;
+  color: var(--muted);
+}
+
+.help-messages {
+  flex: 1;
+  min-height: 0;
+}
+
+.help-panel .message {
+  max-width: 92%;
 }
 
 .access {

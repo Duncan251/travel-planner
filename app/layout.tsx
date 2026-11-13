@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import HelpPanel from "./help-panel";
 
 export const metadata: Metadata = {
   title: "Travel Planner",
@@ -12,6 +13,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         {children}
         <footer className="site-footer">
+          <HelpPanel />
           <a href="/privacy">Privacy</a>
         </footer>
       </body>
