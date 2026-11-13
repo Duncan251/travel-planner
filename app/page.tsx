@@ -5,12 +5,16 @@ import Welcome from "./welcome";
 
 // Signed-out visitors see the welcome page; signed-in users see the planner, after a
 // one-time stop at the preferences page.
-export default async function Home({ searchParams }: { searchParams: Promise<{ signin_error?: string }> }) {
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ signin_error?: string; account_deleted?: string }>;
+}) {
   const supabase = await createClient();
   const user = await currentUser(supabase);
   if (!user) {
-    const { signin_error } = await searchParams;
-    return <Welcome linkFailed={Boolean(signin_error)} />;
+    const { signin_error, account_deleted } = await searchParams;
+    return <Welcome linkFailed={Boolean(signin_error)} accountDeleted={Boolean(account_deleted)} />;
   }
 
   // No profile row yet means this is their first visit: offer the preferences page once.

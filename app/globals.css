@@ -39,11 +39,34 @@ body {
   line-height: 1.5;
 }
 
+/* Every page fills the window, with the footer at the bottom. */
+body {
+  display: flex;
+  flex-direction: column;
+  height: auto;
+  min-height: 100dvh;
+}
+
+/* The chat screen fits the window exactly, so only its message list scrolls. */
+body:has(.chat) {
+  height: 100dvh;
+}
+
+.site-footer {
+  padding: 8px 16px;
+  text-align: center;
+  font-size: 0.8rem;
+}
+
+.site-footer a {
+  color: var(--muted);
+}
+
 .access {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 100dvh;
+  flex: 1;
   padding: 16px;
 }
 
@@ -140,7 +163,7 @@ body {
 .prefs {
   display: flex;
   justify-content: center;
-  min-height: 100dvh;
+  flex: 1;
   padding: 24px 16px;
 }
 
@@ -221,7 +244,9 @@ body {
 .chat {
   display: flex;
   flex-direction: column;
-  height: 100dvh;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
   max-width: 760px;
   margin: 0 auto;
 }
@@ -258,11 +283,77 @@ body {
   white-space: nowrap;
 }
 
+/* Privacy and other help pages */
+.doc {
+  display: flex;
+  justify-content: center;
+  flex: 1;
+  padding: 24px 16px;
+}
+
+.doc-card {
+  width: 100%;
+  max-width: 720px;
+}
+
+.doc-card h1 {
+  margin: 12px 0 0;
+  font-size: 1.5rem;
+}
+
+.doc-section {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.doc-section h2 {
+  margin-top: 0;
+  font-size: 1.2rem;
+}
+
+.danger-button,
+.danger-submit {
+  display: inline-block;
+  padding: 10px 18px;
+  border: none;
+  border-radius: 10px;
+  background: #c0392b;
+  color: #ffffff;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.delete-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+  max-width: 360px;
+}
+
+.delete-form input {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.delete-form .row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
 /* Your trips */
 .trips {
   display: flex;
   justify-content: center;
-  min-height: 100dvh;
+  flex: 1;
   padding: 24px 16px;
 }
 

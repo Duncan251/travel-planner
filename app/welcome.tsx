@@ -4,7 +4,7 @@ import { useActionState } from "react";
 import { sendMagicLink, type SignInState } from "./auth/actions";
 
 // The page signed-out visitors see: a short welcome and an email box for a sign-in link.
-export default function Welcome({ linkFailed }: { linkFailed: boolean }) {
+export default function Welcome({ linkFailed, accountDeleted = false }: { linkFailed: boolean; accountDeleted?: boolean }) {
   const [state, formAction, pending] = useActionState<SignInState, FormData>(sendMagicLink, {
     sent: false,
     error: linkFailed ? "That sign-in link didn't work. It may have expired or already been used. Request a new one below." : "",
@@ -14,6 +14,11 @@ export default function Welcome({ linkFailed }: { linkFailed: boolean }) {
     <main className="access">
       <div className="access-card">
         <h1>Travel Planner</h1>
+        {accountDeleted && (
+          <p className="notice" role="status">
+            Your account and all its data have been deleted.
+          </p>
+        )}
         <p>Meet Katie, your trip-planning companion. She'll help you shape a trip day by day, with real weather and real places.</p>
 
         {state.sent ? (
