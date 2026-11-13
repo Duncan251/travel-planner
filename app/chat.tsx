@@ -6,11 +6,23 @@ import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import { signOut } from "./auth/actions";
 
-type ChatMessage = { role: "user" | "assistant"; content: string };
+export type ChatMessage = { role: "user" | "assistant"; content: string };
 
-// The planner itself, shown to signed-in users.
-export default function Chat({ email }: { email: string | null }) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+// The planner itself, shown to signed-in users. Without a tripId it's a new trip, which is
+// created when the first message is sent.
+export default function Chat({
+  email,
+  tripId: initialTripId = null,
+  tripTitle = null,
+  initialMessages = [],
+}: {
+  email: string | null;
+  tripId?: string | null;
+  tripTitle?: string | null;
+  initialMessages?: ChatMessage[];
+}) {
+  const [tripId, setTripId] = useState<string | null>(initialTripId);
+  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -25,19 +37,26 @@ export default function Chat({ email }: { email: string | null }) {
     const text = input.trim();
     if (!text || isStreaming) return;
 
-    const history: ChatMessage[] = [...messages, { role: "user", content: text }];
-    setMessages([...history, { role: "assistant", content: "" }]);
+    setMessages([...messages, { role: "user", content: text }, { role: "assistant", content: "" }]);
     setInput("");
     setIsStreaming(true);
 
     try {
+      // Only the new message is sent; the server keeps the conversation for this trip.
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: history }),
+        body: JSON.stringify({ tripId, message: text }),
       });
       if (!res.ok || !res.body) {
         throw new Error(await res.text());
+      }
+
+      // A new trip was just created: remember it, and give the page its own address.
+      const savedTripId = res.headers.get("X-Trip-Id");
+      if (savedTripId && savedTripId !== tripId) {
+        setTripId(savedTripId);
+        window.history.replaceState(null, "", `/trips/${savedTripId}`);
       }
 
       // Read the reply chunk by chunk and append it to the last message.
@@ -77,9 +96,14 @@ export default function Chat({ email }: { email: string | null }) {
   return (
     <main className="chat">
       <header className="chat-header">
-        <h1>Travel Planner</h1>
+        <div className="header-title">
+          <h1>Travel Planner</h1>
+          <span className="trip-name">{tripTitle ?? "New trip"}</span>
+        </div>
         <nav className="header-links">
           {email && <span className="header-email">{email}</span>}
+          <a href="/trips">Your trips</a>
+          <a href="/">New trip</a>
           <a href="/preferences">Preferences</a>
           <form action={signOut}>
             <button type="submit" className="link-button">

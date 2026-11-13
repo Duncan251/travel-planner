@@ -4,17 +4,20 @@ import type { ToolOutput } from "./types";
 import { getWeather, getWeatherTool } from "./weather";
 
 // Every tool Claude can use. To add a tool, add its definition here and its handler below.
+// (Tools tied to one request, like save_trip_progress, are passed to runTool as extras.)
 export const tools: Anthropic.Tool[] = [getWeatherTool, findPlacesTool];
 
-const handlers: Record<string, (input: unknown) => Promise<ToolOutput>> = {
+export type ToolHandler = (input: unknown) => Promise<ToolOutput>;
+
+const handlers: Record<string, ToolHandler> = {
   [getWeatherTool.name]: getWeather,
   [findPlacesTool.name]: findPlaces,
 };
 
 // Runs one tool call from Claude and prints it to the terminal.
-export async function runTool(name: string, input: unknown): Promise<ToolOutput> {
+export async function runTool(name: string, input: unknown, extras: Record<string, ToolHandler> = {}): Promise<ToolOutput> {
   const started = Date.now();
-  const handler = handlers[name];
+  const handler = extras[name] ?? handlers[name];
   const output: ToolOutput = handler
     ? await handler(input).catch((err) => ({
         content: `The ${name} tool hit an unexpected error: ${err instanceof Error ? err.message : String(err)}`,

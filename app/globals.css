@@ -237,9 +237,119 @@ body {
 
 .header-links {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   align-items: center;
-  gap: 14px;
+  gap: 6px 14px;
   font-size: 0.9rem;
+}
+
+.header-title {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.trip-name {
+  color: var(--muted);
+  font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Your trips */
+.trips {
+  display: flex;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: 24px 16px;
+}
+
+.trips-card {
+  width: 100%;
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.trips-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.trips-header h1 {
+  margin: 0;
+  font-size: 1.3rem;
+}
+
+.trip-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.trip-item {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.trip-link {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.trip-title {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.trip-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+.rename-form {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  gap: 8px;
+}
+
+.rename-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+}
+
+.link-button.danger {
+  color: #c0392b;
+}
+
+.small a {
+  color: var(--accent);
 }
 
 .header-links a,

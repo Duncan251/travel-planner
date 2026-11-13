@@ -22,6 +22,26 @@ export type ProfileRow = { user_id: string; created_at: string; updated_at: stri
 
 type MessageUsageRow = { user_id: string; day: string; count: number };
 
+export type TripRow = {
+  id: string;
+  user_id: string;
+  title: string;
+  title_set_by_user: boolean;
+  summary: string | null;
+  itinerary: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type TripMessageRow = {
+  id: number;
+  trip_id: string;
+  user_id: string;
+  role: "user" | "assistant";
+  content: string;
+  created_at: string;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -35,6 +55,18 @@ export type Database = {
         Row: MessageUsageRow;
         Insert: Partial<MessageUsageRow> & { user_id: string };
         Update: Partial<MessageUsageRow>;
+        Relationships: [];
+      };
+      trips: {
+        Row: TripRow;
+        Insert: Partial<TripRow>;
+        Update: Partial<TripRow>;
+        Relationships: [];
+      };
+      trip_messages: {
+        Row: TripMessageRow;
+        Insert: Omit<Partial<TripMessageRow>, "id"> & Pick<TripMessageRow, "trip_id" | "role" | "content">;
+        Update: Partial<TripMessageRow>; // not allowed by the database grants, listed for completeness
         Relationships: [];
       };
     };
