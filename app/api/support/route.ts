@@ -5,6 +5,7 @@ import { loadArticles } from "@/lib/knowledge";
 import { createClient, currentUser, supabaseEnv } from "@/lib/supabase/server";
 import { runTool } from "@/lib/tools";
 import { getMyAccountTool, myAccountHandler } from "@/lib/tools/account";
+import { logUsage, toTotals } from "@/lib/usage";
 
 // The support assistant: separate from Katie, with its own prompt (prompts/support.md)
 // followed by every help article. Conversations aren't stored.
@@ -82,7 +83,7 @@ export async function POST(req: Request) {
           }
 
           const message: Anthropic.Message = await stream.finalMessage();
-          logUsage(message.usage);
+          logUsage("💬 Support reply", toTotals(message.usage));
           if (message.stop_reason === "refusal") {
             send("\n\n(Sorry, I can't help with that one.)");
             break;
@@ -159,11 +160,4 @@ function takeSupportMessage(visitor: string): boolean {
   if (used >= SUPPORT_DAILY_LIMIT) return false;
   usage.counts.set(visitor, used + 1);
   return true;
-}
-
-// One line per reply showing how much of the prompt came from the cache.
-function logUsage(u: Anthropic.Usage) {
-  console.log(
-    `💬 Support reply  input: ${u.input_tokens} new + ${u.cache_read_input_tokens ?? 0} read from cache + ${u.cache_creation_input_tokens ?? 0} written to cache · output: ${u.output_tokens}`,
-  );
 }

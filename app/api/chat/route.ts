@@ -6,6 +6,7 @@ import type { TripRow } from "@/lib/supabase/database.types";
 import { createClient, currentUser } from "@/lib/supabase/server";
 import { runTool, tools } from "@/lib/tools";
 import { saveTripProgressTool, tripProgressHandler } from "@/lib/tools/trip";
+import { addUsage, emptyUsage, logUsage, toTotals } from "@/lib/usage";
 
 // This file runs only on the server. The API key is read here and never sent to the browser.
 export const runtime = "nodejs";
@@ -21,6 +22,15 @@ const RECENT_MESSAGES = 10;
 const MAX_MESSAGE_LENGTH = 8000;
 // After this long without a message, Katie opens with a short "welcome back" recap.
 const RETURNING_AFTER_MS = 6 * 60 * 60 * 1000;
+// Katie's tools, always in the same order: they're the start of every request, so keeping
+// them identical lets the prompt cache match.
+const KATIE_TOOLS: Anthropic.Tool[] = [...tools, saveTripProgressTool];
+// Effort: "low" keeps early chat quick and cheap; "medium" makes Katie more thorough once
+// itineraries are involved (the trip already has one, or the traveller is asking for one).
+const ITINERARY_REQUEST = /\b(draft|itinerary|day[- ]by[- ]day|schedule|plan (out )?(the|our|my) days)\b/i;
+// A reply with at least two "Day 1"-style lines is treated as an itinerary.
+const ITINERARY_DAY_LINE = /^[\s>*_#-]*Day\s+\d+\b/gim;
+const MAX_ITINERARY = 30000;
 
 export async function POST(req: Request) {
   if (!process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY.startsWith("your-")) {
@@ -100,16 +110,26 @@ export async function POST(req: Request) {
   const persona = (await readFile(PROMPT_PATH, "utf8")).trim();
   const { data: profile } = await supabase.from("profiles").select("*").eq("user_id", user.id).maybeSingle();
   const today = new Date().toLocaleDateString("en-GB", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-  const system = [
-    persona,
-    preferencesSection(profile as Profile | null),
-    tripSection(trip, hasOlder, lastMessageAt),
-    `Today's date is ${today}.`,
-  ].join("\n\n");
+  //
+  // Prompt caching: the tool definitions and the persona are the same on every request, so
+  // the persona block carries a cache marker. Everything that varies by traveller, trip or
+  // day goes in the second block, after the marker, so it can't stop the cache matching.
+  const system: Anthropic.TextBlockParam[] = [
+    { type: "text", text: persona, cache_control: { type: "ephemeral" } },
+    {
+      type: "text",
+      text: [
+        preferencesSection(profile as Profile | null),
+        tripSection(trip, hasOlder, lastMessageAt),
+        `Today's date is ${today}.`,
+      ].join("\n\n"),
+    },
+  ];
 
   const client = new Anthropic(); // picks up ANTHROPIC_API_KEY from the environment
   const conversation = toConversation([...history, { role: "user", content: text }]);
   const tripTools = { [saveTripProgressTool.name]: tripProgressHandler(supabase, trip.id) };
+  const effort = trip.itinerary || ITINERARY_REQUEST.test(text) ? "medium" : "low";
   let current: { abort(): void } | undefined; // the in-flight request, so it can be cancelled
 
   const encoder = new TextEncoder();
@@ -122,6 +142,10 @@ export async function POST(req: Request) {
         send(chunk);
       };
       let needsGap = false;
+      let totals = emptyUsage();
+      let rounds = 0;
+      let finished = false; // the reply ended normally (not cut off or interrupted)
+      let itinerarySaved = false; // Katie saved an itinerary herself in this reply
 
       try {
         // The tool loop: stream Claude's reply; if it asks for tools, run them,
@@ -130,9 +154,12 @@ export async function POST(req: Request) {
           const stream = client.messages.stream({
             model: MODEL,
             max_tokens: 16000,
-            output_config: { effort: "low" }, // quick, conversational replies
+            output_config: { effort },
+            // Automatic caching of the whole request so far: when Katie uses tools, the next
+            // round re-sends all of this seconds later and reads it from the cache.
+            cache_control: { type: "ephemeral" },
             system,
-            tools: [...tools, saveTripProgressTool],
+            tools: KATIE_TOOLS,
             messages: conversation,
           });
           current = stream;
@@ -148,13 +175,20 @@ export async function POST(req: Request) {
           }
 
           const message: Anthropic.Message = await stream.finalMessage();
+          const usage = toTotals(message.usage);
+          totals = addUsage(totals, usage);
+          rounds++;
+          logUsage(`🧭 Katie round ${rounds} (${effort} effort)`, usage);
           if (message.stop_reason === "refusal") {
             send("\n\n(Claude declined to answer this request.)");
             break;
           }
 
           const toolCalls = message.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
-          if (message.stop_reason !== "tool_use" || toolCalls.length === 0) break;
+          if (message.stop_reason !== "tool_use" || toolCalls.length === 0) {
+            finished = message.stop_reason === "end_turn";
+            break;
+          }
 
           if (round >= MAX_TOOL_ROUNDS) {
             send("\n\n(Stopped: too many lookups in one reply. Try asking again more specifically.)");
@@ -166,6 +200,10 @@ export async function POST(req: Request) {
           const results = await Promise.all(
             toolCalls.map(async (call): Promise<Anthropic.ToolResultBlockParam> => {
               const output = await runTool(call.name, call.input, tripTools);
+              const savedItinerary = (call.input as { itinerary?: unknown } | null)?.itinerary;
+              if (call.name === saveTripProgressTool.name && !output.isError && typeof savedItinerary === "string" && savedItinerary.trim()) {
+                itinerarySaved = true;
+              }
               return { type: "tool_result", tool_use_id: call.id, content: output.content, is_error: output.isError };
             }),
           );
@@ -179,6 +217,16 @@ export async function POST(req: Request) {
         console.error("Chat route error:", err);
         send(`\n\n⚠️ ${message}`);
       } finally {
+        if (rounds > 0) logUsage(`🧭 Katie reply total (${rounds} round${rounds === 1 ? "" : "s"}, ${effort} effort)`, totals);
+        // Guarantee: if Katie shared an itinerary but didn't save it herself, save her reply as
+        // the trip's itinerary, exactly as the traveller saw it. Never for an interrupted reply.
+        if (finished && !itinerarySaved && looksLikeItinerary(reply)) {
+          const { error } = await supabase
+            .from("trips")
+            .update({ itinerary: reply.trim().slice(0, MAX_ITINERARY), updated_at: new Date().toISOString() })
+            .eq("id", trip.id);
+          console.log(error ? `📌 Saving the itinerary failed: ${error.message}` : "📌 Itinerary saved automatically (Katie didn't save it herself)");
+        }
         // Save Katie's reply (even a partial one) so the trip shows it next time.
         if (reply.trim()) {
           const { error } = await supabase
@@ -202,6 +250,10 @@ export async function POST(req: Request) {
       "X-Trip-Id": trip.id, // lets the page switch its address to this trip
     },
   });
+}
+
+function looksLikeItinerary(text: string): boolean {
+  return (text.match(ITINERARY_DAY_LINE) ?? []).length >= 2;
 }
 
 async function touchTrip(supabase: Awaited<ReturnType<typeof createClient>>, tripId: string) {
