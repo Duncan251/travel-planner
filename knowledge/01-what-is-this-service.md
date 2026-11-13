@@ -8,7 +8,7 @@ last_reviewed: 2026-11-13
 
 Katie Travel is an AI travel consultant. You chat with Katie about where you'd like to go, how you like to travel and what you enjoy, and she builds a day-by-day itinerary that fits you.
 
-**Katie is an AI, not a person.** She's designed to feel like talking to a well-travelled friend, but every reply is written by an AI model. If you ever want to speak to a human, ask the support assistant and it will pass your message on.
+**Katie is an AI, not a person.** She's designed to feel like talking to a well-travelled friend, but every reply is written by an AI model. If you ever want to speak to a human, ask Amber, our support assistant, and she will pass your message on.
 
 **What Katie can do**
 - Plan a trip through conversation, one or two questions at a time

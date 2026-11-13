@@ -6,7 +6,7 @@ export const metadata: Metadata = { title: "Delete your account · Travel Planne
 
 const ERRORS: Record<string, string> = {
   confirm: 'Please type DELETE in the box to confirm.',
-  failed: "Something went wrong and nothing was deleted. Please try again, or contact us through the support assistant.",
+  failed: "Something went wrong and nothing was deleted. Please try again, or ask Amber, our support assistant, using the Help button.",
 };
 
 // The confirmation step before an account is deleted.

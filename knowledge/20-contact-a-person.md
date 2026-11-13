@@ -6,9 +6,9 @@ last_reviewed: 2026-11-13
 ---
 # Contacting a person or reporting a problem
 
-The support assistant can answer most questions straight away. If it can't help, or you'd simply prefer a person, ask it to pass your message on.
+Amber, our support assistant, can answer most questions straight away. If she can't help, or you'd simply prefer a person, ask her to pass your message on.
 
-When it does, it will:
+When she does, she will:
 - Summarise your request so you don't need to repeat yourself
 - Send it to a person on our team
 - Tell you what happens next

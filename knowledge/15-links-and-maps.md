@@ -11,4 +11,4 @@ last_reviewed: 2026-11-13
 
 If a map link opens the wrong place, it's usually because several places share a similar name. Check the address in the itinerary.
 
-If a website link is broken, please report it through the support assistant.
+If a website link is broken, please report it through Amber, our support assistant.

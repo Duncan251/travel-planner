@@ -6,6 +6,8 @@ import { createClient, currentUser, supabaseEnv } from "@/lib/supabase/server";
 import { runTool } from "@/lib/tools";
 import { getMyAccountTool, myAccountHandler } from "@/lib/tools/account";
 import { logUsage, toTotals } from "@/lib/usage";
+import { PLANNER_NAME, SUPPORT_NAME, TO_PLANNER_MESSAGE } from "@/lib/handoff";
+import { handoffSignal, handoffSummary, logHandoff, transferToPlannerTool } from "@/lib/tools/handoff";
 
 // The support assistant: separate from Katie, with its own prompt (prompts/support.md)
 // followed by every help article. Conversations aren't stored.
@@ -44,7 +46,7 @@ export async function POST(req: Request) {
   }
 
   const system = await cachedSystemPrompt();
-  const tools: Anthropic.Tool[] = [getMyAccountTool];
+  const tools: Anthropic.Tool[] = [getMyAccountTool, transferToPlannerTool];
   const handlers = {
     [getMyAccountTool.name]: supabase
       ? myAccountHandler(supabase, user)
@@ -92,9 +94,29 @@ export async function POST(req: Request) {
           const toolCalls = message.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
           if (message.stop_reason !== "tool_use" || toolCalls.length === 0 || round >= MAX_TOOL_ROUNDS) break;
 
+          // Handoff to Katie (signed-in people only, since Katie needs an account): stop here,
+          // show the standard handover line, and tell the screen to take them to Katie.
+          const transfer = toolCalls.find((c) => c.name === transferToPlannerTool.name);
+          if (transfer && user) {
+            const summary = handoffSummary(transfer.input) ?? "They'd like help planning a trip.";
+            logHandoff(SUPPORT_NAME, PLANNER_NAME, summary, null);
+            const wroteText = message.content.some((b) => b.type === "text" && b.text.trim());
+            send(`${wroteText || needsGap ? "\n\n" : ""}${TO_PLANNER_MESSAGE}`);
+            send(handoffSignal({ to: "planner", summary }));
+            break;
+          }
+
           conversation.push({ role: "assistant", content: message.content });
           const results = await Promise.all(
             toolCalls.map(async (call): Promise<Anthropic.ToolResultBlockParam> => {
+              if (call.name === transferToPlannerTool.name) {
+                return {
+                  type: "tool_result",
+                  tool_use_id: call.id,
+                  content:
+                    "Not handed off: they aren't signed in, and Katie needs an account. Explain that they can sign in on the welcome page, then chat with Katie about their trip.",
+                };
+              }
               const output = await runTool(call.name, call.input, handlers);
               return { type: "tool_result", tool_use_id: call.id, content: output.content, is_error: output.isError };
             }),

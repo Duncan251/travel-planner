@@ -16,4 +16,4 @@ Katie's suggestions are a starting point, not a guarantee. Before you go, always
 
 Anything marked **⚑** in your itinerary is something to check or book.
 
-**If something was wrong** (a place had closed, the hours were wrong, a link didn't work), please tell us through the support assistant. Reports like these help us improve Katie.
+**If something was wrong** (a place had closed, the hours were wrong, a link didn't work), please tell us through Amber, our support assistant. Reports like these help us improve Katie.

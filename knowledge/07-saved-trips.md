@@ -13,4 +13,4 @@ When you return to a trip, Katie reviews a summary of what you've already agreed
 **Can't see a trip?**
 - Make sure you're signed in with the same email address you used before.
 
-If a trip is still missing, contact us through the support assistant.
+If a trip is still missing, contact us through Amber, our support assistant.

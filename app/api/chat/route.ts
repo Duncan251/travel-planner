@@ -7,6 +7,8 @@ import { createClient, currentUser } from "@/lib/supabase/server";
 import { runTool, tools } from "@/lib/tools";
 import { saveTripProgressTool, tripProgressHandler } from "@/lib/tools/trip";
 import { addUsage, emptyUsage, logUsage, toTotals } from "@/lib/usage";
+import { FROM_SUPPORT_LABEL, PLANNER_NAME, SUPPORT_NAME, TO_SUPPORT_MESSAGE } from "@/lib/handoff";
+import { handoffSignal, handoffSummary, logHandoff, transferToSupportTool } from "@/lib/tools/handoff";
 
 // This file runs only on the server. The API key is read here and never sent to the browser.
 export const runtime = "nodejs";
@@ -24,7 +26,7 @@ const MAX_MESSAGE_LENGTH = 8000;
 const RETURNING_AFTER_MS = 6 * 60 * 60 * 1000;
 // Katie's tools, always in the same order: they're the start of every request, so keeping
 // them identical lets the prompt cache match.
-const KATIE_TOOLS: Anthropic.Tool[] = [...tools, saveTripProgressTool];
+const KATIE_TOOLS: Anthropic.Tool[] = [...tools, saveTripProgressTool, transferToSupportTool];
 // Effort: "low" keeps early chat quick and cheap; "medium" makes Katie more thorough once
 // itineraries are involved (the trip already has one, or the traveller is asking for one).
 const ITINERARY_REQUEST = /\b(draft|itinerary|day[- ]by[- ]day|schedule|plan (out )?(the|our|my) days)\b/i;
@@ -45,8 +47,18 @@ export async function POST(req: Request) {
   const user = await currentUser(supabase);
   if (!user) return new Response("Please sign in to chat.", { status: 401 });
 
-  const { tripId, message } = (await req.json().catch(() => ({}))) as { tripId?: unknown; message?: unknown };
-  const text = typeof message === "string" ? message.trim() : "";
+  const { tripId, message, handoff } = (await req.json().catch(() => ({}))) as {
+    tripId?: unknown;
+    message?: unknown;
+    handoff?: { summary?: unknown };
+  };
+  // A handoff from Amber arrives as a labelled summary instead of a typed message.
+  const handoffFromSupport = handoff ? handoffSummary(handoff) : null;
+  const text = handoffFromSupport
+    ? `${FROM_SUPPORT_LABEL}${handoffFromSupport}`
+    : typeof message === "string"
+      ? message.trim()
+      : "";
   if (!text) return new Response("The message was empty.", { status: 400 });
   if (text.length > MAX_MESSAGE_LENGTH) {
     return new Response(`That message is too long (max ${MAX_MESSAGE_LENGTH} characters).`, { status: 400 });
@@ -187,6 +199,17 @@ export async function POST(req: Request) {
           const toolCalls = message.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
           if (message.stop_reason !== "tool_use" || toolCalls.length === 0) {
             finished = message.stop_reason === "end_turn";
+            break;
+          }
+
+          // Handoff to Amber: stop here, show the standard handover line, and tell
+          // the screen to open the Help panel with Katie's summary.
+          const transfer = toolCalls.find((c) => c.name === transferToSupportTool.name);
+          if (transfer) {
+            const summary = handoffSummary(transfer.input) ?? "They have a question about using the app.";
+            logHandoff(PLANNER_NAME, SUPPORT_NAME, summary, trip.id);
+            say(`${reply.trim() ? "\n\n" : ""}${TO_SUPPORT_MESSAGE}`);
+            send(handoffSignal({ to: "support", summary }));
             break;
           }
 

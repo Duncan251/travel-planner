@@ -114,6 +114,20 @@ body:has(.chat) {
   max-width: 92%;
 }
 
+/* "Passed from Katie: …" notes where one assistant hands over to the other */
+.handoff-note {
+  align-self: center;
+  max-width: 90%;
+  margin: 0;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
 .access {
   display: flex;
   align-items: center;

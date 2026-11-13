@@ -13,4 +13,4 @@ Sign-in emails usually arrive within a minute. If yours hasn't:
 3. **Wait a few minutes, then request a new link.** Asking for many links in quick succession can temporarily block further requests, so leave a short gap.
 4. **Search your inbox** for "noreply@mail.app.supabase.io".
 
-If it still hasn't arrived after 15 minutes, contact us through the support assistant and we'll look into it.
+If it still hasn't arrived after 15 minutes, contact us through Amber, our support assistant, and we'll look into it.
