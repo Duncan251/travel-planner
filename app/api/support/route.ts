@@ -5,6 +5,7 @@ import { loadArticles } from "@/lib/knowledge";
 import { createClient, currentUser, supabaseEnv } from "@/lib/supabase/server";
 import { runTool } from "@/lib/tools";
 import { getMyAccountTool, myAccountHandler } from "@/lib/tools/account";
+import { escalateToHumanTool, escalationHandler } from "@/lib/tools/escalate";
 import { logUsage, toTotals } from "@/lib/usage";
 import { PLANNER_NAME, SUPPORT_NAME, TO_PLANNER_MESSAGE } from "@/lib/handoff";
 import { handoffSignal, handoffSummary, logHandoff, transferToPlannerTool } from "@/lib/tools/handoff";
@@ -46,11 +47,13 @@ export async function POST(req: Request) {
   }
 
   const system = await cachedSystemPrompt();
-  const tools: Anthropic.Tool[] = [getMyAccountTool, transferToPlannerTool];
+  const tools: Anthropic.Tool[] = [getMyAccountTool, transferToPlannerTool, escalateToHumanTool];
   const handlers = {
     [getMyAccountTool.name]: supabase
       ? myAccountHandler(supabase, user)
       : async () => ({ content: "Not signed in.", isError: false }),
+    // The ticket gets the verified user (never one Claude names) and the conversation so far.
+    [escalateToHumanTool.name]: escalationHandler({ user, conversation: messages, visitor }),
   };
 
   const client = new Anthropic();

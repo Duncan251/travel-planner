@@ -33,6 +33,21 @@ export type TripRow = {
   updated_at: string;
 };
 
+export type TicketRow = {
+  id: string;
+  ticket_number: number;
+  user_id: string | null;
+  email: string;
+  title: string;
+  summary: string;
+  already_tried: string | null;
+  reason: string | null;
+  conversation: { role: string; content: string }[];
+  status: "open" | "resolved";
+  created_at: string;
+  resolved_at: string | null;
+};
+
 export type TripMessageRow = {
   id: number;
   trip_id: string;
@@ -61,6 +76,12 @@ export type Database = {
         Row: TripRow;
         Insert: Partial<TripRow>;
         Update: Partial<TripRow>;
+        Relationships: [];
+      };
+      tickets: {
+        Row: TicketRow;
+        Insert: Omit<Partial<TicketRow>, "id" | "ticket_number"> & Pick<TicketRow, "email" | "title" | "summary">;
+        Update: Partial<TicketRow>;
         Relationships: [];
       };
       trip_messages: {
