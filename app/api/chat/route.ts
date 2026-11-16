@@ -33,6 +33,10 @@ const ITINERARY_REQUEST = /\b(draft|itinerary|day[- ]by[- ]day|schedule|plan (ou
 // A reply with at least two "Day 1"-style lines is treated as an itinerary.
 const ITINERARY_DAY_LINE = /^[\s>*_#-]*Day\s+\d+\b/gim;
 const MAX_ITINERARY = 30000;
+// Everything Katie writes in one reply is shown together, so after a tool she must carry on
+// rather than start again.
+const TOOL_RESULTS_GUIDANCE =
+  "When tool results come back, continue from where you stopped. The traveller has already seen everything you wrote before the tool call, so never repeat or rephrase it. If you have nothing new to add, end your reply.";
 
 export async function POST(req: Request) {
   if (!process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY.startsWith("your-")) {
@@ -133,6 +137,7 @@ export async function POST(req: Request) {
       text: [
         preferencesSection(profile as Profile | null),
         tripSection(trip, hasOlder, lastMessageAt),
+        TOOL_RESULTS_GUIDANCE,
         `Today's date is ${today}.`,
       ].join("\n\n"),
     },
@@ -232,8 +237,18 @@ export async function POST(req: Request) {
           );
           conversation.push({ role: "user", content: results });
 
+          // Saving notes is bookkeeping the traveller never sees. If Katie has already written her
+          // reply and only saved notes, the reply is complete: finish here rather than asking
+          // Claude to continue, which sometimes made it write the whole reply a second time.
+          const wroteText = message.content.some((b) => b.type === "text" && b.text.trim());
+          if (wroteText && toolCalls.every((c) => c.name === saveTripProgressTool.name)) {
+            console.log("📝 Notes saved after the reply, so the reply ends here (no extra round)");
+            finished = true;
+            break;
+          }
+
           // Separate any text written before the tool call from what comes after it.
-          if (message.content.some((b) => b.type === "text" && b.text.trim())) needsGap = true;
+          if (wroteText) needsGap = true;
         }
       } catch (err) {
         const message = err instanceof Anthropic.APIError ? err.message : "Unexpected error talking to Claude.";
