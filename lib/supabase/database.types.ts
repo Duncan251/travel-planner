@@ -43,6 +43,7 @@ export type TicketRow = {
   already_tried: string | null;
   reason: string | null;
   conversation: { role: string; content: string }[];
+  updates: { at: string; text: string }[];
   status: "open" | "resolved";
   created_at: string;
   resolved_at: string | null;

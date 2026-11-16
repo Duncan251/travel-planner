@@ -5,7 +5,8 @@ import { loadArticles } from "@/lib/knowledge";
 import { createClient, currentUser, supabaseEnv } from "@/lib/supabase/server";
 import { runTool } from "@/lib/tools";
 import { getMyAccountTool, myAccountHandler } from "@/lib/tools/account";
-import { escalateToHumanTool, escalationHandler } from "@/lib/tools/escalate";
+import { addToTicketHandler, addToTicketTool, escalateToHumanTool, escalationHandler } from "@/lib/tools/escalate";
+import { knownTickets, receiptMarker, ticketsNote, verifiedReceiptTickets } from "@/lib/tickets";
 import { logUsage, toTotals } from "@/lib/usage";
 import { PLANNER_NAME, SUPPORT_NAME, TO_PLANNER_MESSAGE } from "@/lib/handoff";
 import { handoffSignal, handoffSummary, logHandoff, transferToPlannerTool } from "@/lib/tools/handoff";
@@ -31,7 +32,8 @@ export async function POST(req: Request) {
     return new Response("The support assistant isn't set up yet.", { status: 500 });
   }
 
-  const messages = parseMessages(await req.json().catch(() => null));
+  const requestBody = (await req.json().catch(() => null)) as { messages?: unknown; receipts?: unknown } | null;
+  const messages = parseMessages(requestBody);
   if (!messages) return new Response("That message couldn't be read. Please try again.", { status: 400 });
 
   // Who's asking, if anyone. Signed-out visitors can still get help.
@@ -46,14 +48,32 @@ export async function POST(req: Request) {
     );
   }
 
-  const system = await cachedSystemPrompt();
-  const tools: Anthropic.Tool[] = [getMyAccountTool, transferToPlannerTool, escalateToHumanTool];
+  // Tickets Amber should know about. The panel only keeps her replies' text, not her tool
+  // use, so this comes from the database each time: tickets proven by signed receipts to be
+  // from this conversation, plus a signed-in person's own recent tickets.
+  const conversationTickets = verifiedReceiptTickets(requestBody?.receipts);
+  const tickets = await knownTickets(conversationTickets, user?.id ?? null).catch(() => []);
+  const issuedTickets: number[] = []; // tickets created during this reply, which get receipts
+
+  // The cached prompt and articles first; the ticket note varies, so it goes after the cache marker.
+  const system: Anthropic.TextBlockParam[] = [...(await cachedSystemPrompt()), { type: "text", text: ticketsNote(tickets) }];
+  const tools: Anthropic.Tool[] = [getMyAccountTool, transferToPlannerTool, escalateToHumanTool, addToTicketTool];
   const handlers = {
     [getMyAccountTool.name]: supabase
       ? myAccountHandler(supabase, user)
       : async () => ({ content: "Not signed in.", isError: false }),
-    // The ticket gets the verified user (never one Claude names) and the conversation so far.
-    [escalateToHumanTool.name]: escalationHandler({ user, conversation: messages, visitor }),
+    // Tickets get the verified user (never one Claude names) and the conversation so far.
+    [escalateToHumanTool.name]: escalationHandler({
+      user,
+      conversation: messages,
+      visitor,
+      conversationTickets,
+      onTicket: (n) => {
+        issuedTickets.push(n);
+        conversationTickets.push(n);
+      },
+    }),
+    [addToTicketTool.name]: addToTicketHandler({ user, conversationTickets, visitor }),
   };
 
   const client = new Anthropic();
@@ -131,6 +151,8 @@ export async function POST(req: Request) {
         console.error("Support route error:", err);
         send(`\n\n⚠️ ${err instanceof Anthropic.APIError ? err.message : "Something went wrong. Please try again."}`);
       } finally {
+        // A signed receipt for each ticket created in this reply, for the panel to send back.
+        for (const n of issuedTickets) send(receiptMarker(n));
         controller.close();
       }
     },

@@ -16,21 +16,39 @@ export const FROM_SUPPORT_LABEL = `[Passed from ${SUPPORT_NAME}] `;
 // The label used before the support assistant was named, so older saved notes still show as notes.
 const OLD_FROM_SUPPORT_LABEL = "[Passed from the Help assistant] ";
 
-// The server ends a reply that hands off with this marker and a little JSON, so the
-// screen knows to open the other assistant. It's never shown.
-export const HANDOFF_MARKER = "\u001eHANDOFF ";
+// The server can end a reply with hidden markers, each starting with this character and
+// followed by a word and a little JSON. They're never shown:
+//   HANDOFF - open the other assistant;  RECEIPT - a signed receipt for a new support ticket.
+const MARKER_START = "\u001e";
+export const HANDOFF_MARKER = `${MARKER_START}HANDOFF `;
+export const RECEIPT_MARKER = `${MARKER_START}RECEIPT `;
 
 export type Handoff = { to: "support" | "planner"; summary: string };
+export type TicketReceipt = { ticket: number; sig: string };
+
+// The JSON after each marker of one kind (markers come at the end of a reply, in any order).
+function readMarkers<T>(text: string, marker: string): T[] {
+  return text
+    .split(MARKER_START)
+    .slice(1)
+    .filter((part) => `${MARKER_START}${part}`.startsWith(marker))
+    .flatMap((part) => {
+      try {
+        return [JSON.parse(part.slice(marker.length - MARKER_START.length)) as T];
+      } catch {
+        return []; // still arriving
+      }
+    });
+}
 
 // Splits streamed text into what to show and any handoff instruction at the end.
 export function splitHandoff(text: string): { visible: string; handoff: Handoff | null } {
-  const at = text.indexOf(HANDOFF_MARKER);
-  if (at === -1) return { visible: text.split("\u001e")[0], handoff: null };
-  try {
-    return { visible: text.slice(0, at), handoff: JSON.parse(text.slice(at + HANDOFF_MARKER.length)) as Handoff };
-  } catch {
-    return { visible: text.slice(0, at), handoff: null }; // marker still arriving
-  }
+  return { visible: text.split(MARKER_START)[0], handoff: readMarkers<Handoff>(text, HANDOFF_MARKER)[0] ?? null };
+}
+
+// Ticket receipts in a support reply, for the Help panel to send back with later messages.
+export function readReceipts(text: string): TicketReceipt[] {
+  return readMarkers<TicketReceipt>(text, RECEIPT_MARKER);
 }
 
 // If a message is a handoff note, returns who it came from and the summary.

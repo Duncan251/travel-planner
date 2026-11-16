@@ -5,7 +5,15 @@ import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
-import { FROM_PLANNER_LABEL, PENDING_PLANNER_HANDOFF_KEY, readHandoffNote, splitHandoff, SUPPORT_NAME } from "@/lib/handoff";
+import {
+  FROM_PLANNER_LABEL,
+  PENDING_PLANNER_HANDOFF_KEY,
+  readHandoffNote,
+  readReceipts,
+  splitHandoff,
+  SUPPORT_NAME,
+  type TicketReceipt,
+} from "@/lib/handoff";
 
 type HelpMessage = { role: "user" | "assistant"; content: string; failed?: boolean };
 
@@ -19,6 +27,9 @@ export default function HelpPanel() {
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const returnTripId = useRef<string | null>(null); // the trip Katie handed over from, if any
+  // Signed receipts for tickets created in this conversation, sent back with each message so
+  // Amber knows they exist (she can't see her own earlier tool use).
+  const receipts = useRef<TicketReceipt[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -75,7 +86,10 @@ export default function HelpPanel() {
       const res = await fetch("/api/support", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: history.map(({ role, content }) => ({ role, content })) }),
+        body: JSON.stringify({
+          messages: history.map(({ role, content }) => ({ role, content })),
+          receipts: receipts.current,
+        }),
       });
       if (!res.ok || !res.body) throw new Error(await res.text());
 
@@ -93,6 +107,7 @@ export default function HelpPanel() {
         });
       }
 
+      receipts.current = [...receipts.current, ...readReceipts(full)];
       const { handoff } = splitHandoff(full);
       if (handoff?.to === "planner") goToKatie(handoff.summary);
     } catch (err) {
