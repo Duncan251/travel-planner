@@ -22,9 +22,14 @@ const OLD_FROM_SUPPORT_LABEL = "[Passed from the Help assistant] ";
 const MARKER_START = "\u001e";
 export const HANDOFF_MARKER = `${MARKER_START}HANDOFF `;
 export const RECEIPT_MARKER = `${MARKER_START}RECEIPT `;
+//   CONVO - the signed pass for this support conversation;  END - the conversation has ended.
+export const CONVERSATION_MARKER = `${MARKER_START}CONVO `;
+export const END_MARKER = `${MARKER_START}END `;
 
 export type Handoff = { to: "support" | "planner"; summary: string };
 export type TicketReceipt = { ticket: number; sig: string };
+export type ConversationPass = { token: string };
+export type ConversationEnd = { outcome: "resolved" | "handed_to_katie" | "escalated"; askRating: boolean };
 
 // The JSON after each marker of one kind (markers come at the end of a reply, in any order).
 function readMarkers<T>(text: string, marker: string): T[] {
@@ -49,6 +54,16 @@ export function splitHandoff(text: string): { visible: string; handoff: Handoff 
 // Ticket receipts in a support reply, for the Help panel to send back with later messages.
 export function readReceipts(text: string): TicketReceipt[] {
   return readMarkers<TicketReceipt>(text, RECEIPT_MARKER);
+}
+
+// The support conversation pass, if this reply started a new conversation.
+export function readConversationPass(text: string): ConversationPass | null {
+  return readMarkers<ConversationPass>(text, CONVERSATION_MARKER)[0] ?? null;
+}
+
+// Whether this reply ended the support conversation (and if so, how).
+export function readConversationEnd(text: string): ConversationEnd | null {
+  return readMarkers<ConversationEnd>(text, END_MARKER)[0] ?? null;
 }
 
 // If a message is a handoff note, returns who it came from and the summary.

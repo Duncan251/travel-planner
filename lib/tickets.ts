@@ -1,6 +1,6 @@
 import "server-only"; // signs receipts with a server secret and reads tickets as administrator
-import { createHmac, timingSafeEqual } from "node:crypto";
 import { RECEIPT_MARKER, type TicketReceipt } from "./handoff";
+import { isValidSignature, signValue } from "./signing";
 import { createAdminClient } from "./supabase/admin";
 
 // Ticket continuity for Amber. The Help panel only keeps the text of her replies, not her
@@ -11,14 +11,8 @@ import { createAdminClient } from "./supabase/admin";
 
 const RECENT_HOURS = 24;
 
-function secret(): string {
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!key) throw new Error("SUPABASE_SERVICE_ROLE_KEY is not set");
-  return `ticket-receipts:${key}`;
-}
-
 function sign(ticket: number): string {
-  return createHmac("sha256", secret()).update(`ticket:${ticket}`).digest("hex").slice(0, 32);
+  return signValue("ticket-receipts", `ticket:${ticket}`);
 }
 
 // The hidden marker the server adds to a reply when it creates a ticket.
@@ -33,9 +27,7 @@ export function verifiedReceiptTickets(receipts: unknown): number[] {
   const tickets = new Set<number>();
   for (const r of receipts.slice(0, 20) as Partial<TicketReceipt>[]) {
     if (typeof r?.ticket !== "number" || typeof r.sig !== "string") continue;
-    const expected = Buffer.from(sign(r.ticket));
-    const given = Buffer.from(r.sig);
-    if (expected.length === given.length && timingSafeEqual(expected, given)) tickets.add(r.ticket);
+    if (isValidSignature("ticket-receipts", `ticket:${r.ticket}`, r.sig)) tickets.add(r.ticket);
   }
   return [...tickets];
 }

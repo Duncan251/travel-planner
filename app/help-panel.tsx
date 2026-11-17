@@ -8,6 +8,8 @@ import remarkGfm from "remark-gfm";
 import {
   FROM_PLANNER_LABEL,
   PENDING_PLANNER_HANDOFF_KEY,
+  readConversationEnd,
+  readConversationPass,
   readHandoffNote,
   readReceipts,
   splitHandoff,
@@ -30,6 +32,12 @@ export default function HelpPanel() {
   // Signed receipts for tickets created in this conversation, sent back with each message so
   // Amber knows they exist (she can't see her own earlier tool use).
   const receipts = useRef<TicketReceipt[]>([]);
+  // The signed pass for the logged support conversation, and where it began in the list (a
+  // new conversation starts after one is resolved or handed to Katie).
+  const conversationPass = useRef<string | null>(null);
+  const conversationStart = useRef(0);
+  // "Did this help?": shown when a conversation is resolved or raises a ticket.
+  const [feedback, setFeedback] = useState<{ pass: string; answer: "up" | "down" | null } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -75,11 +83,15 @@ export default function HelpPanel() {
   }
 
   async function send(text: string) {
-    // Earlier exchanges that failed aren't sent back to the assistant.
+    // This conversation's messages only; earlier exchanges that failed aren't sent back.
     const current = messagesRef.current;
-    const history = [...current.filter((m) => !m.failed), { role: "user" as const, content: text }];
+    const history = [
+      ...current.slice(conversationStart.current).filter((m) => !m.failed),
+      { role: "user" as const, content: text },
+    ];
     setMessages([...current, { role: "user", content: text }, { role: "assistant", content: "" }]);
     setIsStreaming(true);
+    setFeedback((f) => (f && f.answer ? f : null)); // an unanswered "Did this help?" goes away
     let full = "";
 
     try {
@@ -89,6 +101,7 @@ export default function HelpPanel() {
         body: JSON.stringify({
           messages: history.map(({ role, content }) => ({ role, content })),
           receipts: receipts.current,
+          conversation: conversationPass.current,
         }),
       });
       if (!res.ok || !res.body) throw new Error(await res.text());
@@ -108,6 +121,19 @@ export default function HelpPanel() {
       }
 
       receipts.current = [...receipts.current, ...readReceipts(full)];
+      conversationPass.current = readConversationPass(full)?.token ?? conversationPass.current;
+
+      // The conversation ended (or raised a ticket): ask "Did this help?" if appropriate.
+      const end = readConversationEnd(full);
+      if (end && conversationPass.current) {
+        if (end.askRating) setFeedback({ pass: conversationPass.current, answer: null });
+        if (end.outcome !== "escalated") {
+          // Resolved or handed on: anything typed next starts a new logged conversation.
+          conversationPass.current = null;
+          conversationStart.current = current.length + 2;
+        }
+      }
+
       const { handoff } = splitHandoff(full);
       if (handoff?.to === "planner") goToKatie(handoff.summary);
     } catch (err) {
@@ -143,6 +169,16 @@ export default function HelpPanel() {
         window.location.href = target;
       }
     }, 1200); // a moment to read the handover message
+  }
+
+  async function rate(answer: "up" | "down") {
+    if (!feedback || feedback.answer) return;
+    setFeedback({ ...feedback, answer });
+    await fetch("/api/support/rating", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conversation: feedback.pass, rating: answer }),
+    }).catch(() => {});
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -209,6 +245,23 @@ export default function HelpPanel() {
                 </div>
               );
             })}
+            {feedback && !isStreaming && (
+              <div className="feedback" role="group" aria-label="Did this help?">
+                {feedback.answer ? (
+                  <span>Thanks for the feedback.</span>
+                ) : (
+                  <>
+                    <span>Did this help?</span>
+                    <button type="button" onClick={() => rate("up")} aria-label="Yes, this helped">
+                      👍
+                    </button>
+                    <button type="button" onClick={() => rate("down")} aria-label="No, this didn't help">
+                      👎
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
             <div ref={bottomRef} />
           </div>
 

@@ -1,6 +1,19 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { after } from "next/server";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import {
+  closeAbandonedConversations,
+  conversationEndMarker,
+  conversationPassMarker,
+  endConversation,
+  openConversation,
+  recordTicket,
+  saveMessages,
+  setTopic,
+} from "@/lib/support-log";
+import { markResolved, markResolvedTool } from "@/lib/tools/resolved";
+import type { ConversationEnd } from "@/lib/handoff";
 import { loadArticles } from "@/lib/knowledge";
 import { createClient, currentUser, supabaseEnv } from "@/lib/supabase/server";
 import { runTool } from "@/lib/tools";
@@ -12,7 +25,7 @@ import { PLANNER_NAME, SUPPORT_NAME, TO_PLANNER_MESSAGE } from "@/lib/handoff";
 import { handoffSignal, handoffSummary, logHandoff, transferToPlannerTool } from "@/lib/tools/handoff";
 
 // The support assistant: separate from Katie, with its own prompt (prompts/support.md)
-// followed by every help article. Conversations aren't stored.
+// followed by every help article. Each conversation is logged in support_conversations.
 export const runtime = "nodejs";
 
 const MODEL = "claude-haiku-5-5"; // same model as Katie
@@ -32,7 +45,11 @@ export async function POST(req: Request) {
     return new Response("The support assistant isn't set up yet.", { status: 500 });
   }
 
-  const requestBody = (await req.json().catch(() => null)) as { messages?: unknown; receipts?: unknown } | null;
+  const requestBody = (await req.json().catch(() => null)) as {
+    messages?: unknown;
+    receipts?: unknown;
+    conversation?: unknown;
+  } | null;
   const messages = parseMessages(requestBody);
   if (!messages) return new Response("That message couldn't be read. Please try again.", { status: 400 });
 
@@ -48,6 +65,19 @@ export async function POST(req: Request) {
     );
   }
 
+  // The logged conversation: continued from the panel's signed pass, or newly started.
+  const logged = await openConversation(requestBody?.conversation, user?.id ?? null).catch(() => null);
+
+  // Saving the log, working out the topic and closing abandoned conversations happen after
+  // the reply has been sent, so they never slow it down.
+  let afterReply: () => Promise<void> = async () => {};
+  let replyFinished: () => void = () => {};
+  const replyDone = new Promise<void>((resolve) => (replyFinished = resolve));
+  after(async () => {
+    await replyDone;
+    await afterReply().catch((err) => console.error("Support logging failed:", err));
+  });
+
   // Tickets Amber should know about. The panel only keeps her replies' text, not her tool
   // use, so this comes from the database each time: tickets proven by signed receipts to be
   // from this conversation, plus a signed-in person's own recent tickets.
@@ -57,7 +87,7 @@ export async function POST(req: Request) {
 
   // The cached prompt and articles first; the ticket note varies, so it goes after the cache marker.
   const system: Anthropic.TextBlockParam[] = [...(await cachedSystemPrompt()), { type: "text", text: ticketsNote(tickets) }];
-  const tools: Anthropic.Tool[] = [getMyAccountTool, transferToPlannerTool, escalateToHumanTool, addToTicketTool];
+  const tools: Anthropic.Tool[] = [getMyAccountTool, transferToPlannerTool, escalateToHumanTool, addToTicketTool, markResolvedTool];
   const handlers = {
     [getMyAccountTool.name]: supabase
       ? myAccountHandler(supabase, user)
@@ -74,6 +104,7 @@ export async function POST(req: Request) {
       },
     }),
     [addToTicketTool.name]: addToTicketHandler({ user, conversationTickets, visitor }),
+    [markResolvedTool.name]: markResolved,
   };
 
   const client = new Anthropic();
@@ -84,7 +115,14 @@ export async function POST(req: Request) {
   const body = new ReadableStream<Uint8Array>({
     async start(controller) {
       const send = (text: string) => controller.enqueue(encoder.encode(text));
+      let shown = ""; // what the person sees in this reply, for the log
+      const show = (text: string) => {
+        shown += text;
+        send(text);
+      };
       let needsGap = false;
+      let handedOff = false;
+      let resolved = false;
       try {
         for (let round = 0; ; round++) {
           const stream = client.messages.stream({
@@ -100,17 +138,17 @@ export async function POST(req: Request) {
           for await (const event of stream) {
             if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
               if (needsGap) {
-                send("\n\n");
+                show("\n\n");
                 needsGap = false;
               }
-              send(event.delta.text);
+              show(event.delta.text);
             }
           }
 
           const message: Anthropic.Message = await stream.finalMessage();
           logUsage("💬 Support reply", toTotals(message.usage));
           if (message.stop_reason === "refusal") {
-            send("\n\n(Sorry, I can't help with that one.)");
+            show("\n\n(Sorry, I can't help with that one.)");
             break;
           }
 
@@ -124,8 +162,9 @@ export async function POST(req: Request) {
             const summary = handoffSummary(transfer.input) ?? "They'd like help planning a trip.";
             logHandoff(SUPPORT_NAME, PLANNER_NAME, summary, null);
             const wroteText = message.content.some((b) => b.type === "text" && b.text.trim());
-            send(`${wroteText || needsGap ? "\n\n" : ""}${TO_PLANNER_MESSAGE}`);
+            show(`${wroteText || needsGap ? "\n\n" : ""}${TO_PLANNER_MESSAGE}`);
             send(handoffSignal({ to: "planner", summary }));
+            handedOff = true;
             break;
           }
 
@@ -145,14 +184,48 @@ export async function POST(req: Request) {
             }),
           );
           conversation.push({ role: "user", content: results });
-          if (message.content.some((b) => b.type === "text" && b.text.trim())) needsGap = true;
+          const wroteText = message.content.some((b) => b.type === "text" && b.text.trim());
+          if (toolCalls.some((c) => c.name === markResolvedTool.name)) resolved = true;
+          // Marking resolved after the closing reply ends the reply (nothing more to say).
+          if (wroteText && toolCalls.every((c) => c.name === markResolvedTool.name)) break;
+          if (wroteText) needsGap = true;
         }
       } catch (err) {
         console.error("Support route error:", err);
-        send(`\n\n⚠️ ${err instanceof Anthropic.APIError ? err.message : "Something went wrong. Please try again."}`);
+        show(`\n\n⚠️ ${err instanceof Anthropic.APIError ? err.message : "Something went wrong. Please try again."}`);
       } finally {
         // A signed receipt for each ticket created in this reply, for the panel to send back.
         for (const n of issuedTickets) send(receiptMarker(n));
+
+        if (logged) {
+          // The panel's pass for a new conversation, and whether to ask "Did this help?".
+          if (logged.isNew) send(conversationPassMarker(logged.pass));
+          const ticket = issuedTickets.at(-1) ?? null;
+          const end: ConversationEnd | null = handedOff
+            ? { outcome: "handed_to_katie", askRating: false }
+            : resolved
+              ? { outcome: ticket || conversationTickets.length ? "escalated" : "resolved", askRating: true }
+              : ticket
+                ? { outcome: "escalated", askRating: true }
+                : null;
+          // Record the ticket and any ending before the reply finishes, so a quick
+          // "Did this help?" click can never arrive before the log is ready for it.
+          const transcript = shown.trim() ? [...messages, { role: "assistant", content: shown.trim() }] : messages;
+          if (ticket) await recordTicket(logged.id, ticket).catch(() => {});
+          const ended =
+            handedOff || resolved
+              ? await endConversation(logged.id, handedOff ? "handed_to_katie" : "resolved", transcript).catch(() => null)
+              : null;
+          if (end) send(conversationEndMarker(end));
+
+          // The slower parts run after the reply has been sent.
+          afterReply = async () => {
+            if (ended) await setTopic(logged.id, transcript, ended);
+            else await saveMessages(logged.id, transcript);
+            await closeAbandonedConversations();
+          };
+        }
+        replyFinished();
         controller.close();
       }
     },

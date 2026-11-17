@@ -49,6 +49,24 @@ export type TicketRow = {
   resolved_at: string | null;
 };
 
+export const SUPPORT_TOPICS = ["sign-in", "account", "trips", "privacy", "limits", "accuracy", "bug", "feedback", "other"] as const;
+export type SupportTopic = (typeof SUPPORT_TOPICS)[number];
+export type SupportOutcome = "resolved" | "handed_to_katie" | "escalated" | "abandoned";
+
+export type SupportConversationRow = {
+  id: string;
+  user_id: string | null;
+  started_at: string;
+  last_message_at: string;
+  ended_at: string | null;
+  messages: { role: string; content: string }[];
+  topic: SupportTopic | null;
+  outcome: SupportOutcome | null;
+  ticket_number: number | null;
+  rating: "up" | "down" | null;
+  rated_at: string | null;
+};
+
 export type TripMessageRow = {
   id: number;
   trip_id: string;
@@ -78,6 +96,12 @@ export type Database = {
         Row: TripRow;
         Insert: Partial<TripRow>;
         Update: Partial<TripRow>;
+        Relationships: [];
+      };
+      support_conversations: {
+        Row: SupportConversationRow;
+        Insert: Partial<SupportConversationRow>;
+        Update: Partial<SupportConversationRow>;
         Relationships: [];
       };
       tickets: {

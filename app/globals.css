@@ -114,6 +114,33 @@ body:has(.chat) {
   max-width: 92%;
 }
 
+/* "Did this help?" at the end of a support conversation */
+.feedback {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.feedback button {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.feedback button:hover {
+  border-color: var(--accent);
+}
+
 /* "Passed from Katie: …" notes where one assistant hands over to the other */
 .handoff-note {
   align-self: center;

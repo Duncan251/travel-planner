@@ -30,6 +30,7 @@ function deny(request: NextRequest) {
 
 export const config = {
   // Everything except the access page, the code check, sign-in links from emails
-  // (which may be opened on a device that hasn't entered the code), and Next.js's own files.
-  matcher: ["/((?!access$|api/access$|auth/confirm$|_next/static|_next/image|favicon.ico).*)"],
+  // (which may be opened on a device that hasn't entered the code), the daily support sweep
+  // (called by Vercel's scheduler, and protected by CRON_SECRET instead), and Next.js's own files.
+  matcher: ["/((?!access$|api/access$|auth/confirm$|api/support/sweep$|_next/static|_next/image|favicon.ico).*)"],
 };
