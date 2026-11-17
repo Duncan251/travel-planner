@@ -35,8 +35,11 @@ const ITINERARY_DAY_LINE = /^[\s>*_#-]*Day\s+\d+\b/gim;
 const MAX_ITINERARY = 30000;
 // Everything Katie writes in one reply is shown together, so after a tool she must carry on
 // rather than start again.
-const TOOL_RESULTS_GUIDANCE =
-  "When tool results come back, continue from where you stopped. The traveller has already seen everything you wrote before the tool call, so never repeat or rephrase it. If you have nothing new to add, end your reply.";
+const TOOL_RESULTS_GUIDANCE = [
+  "When tool results come back, continue from where you stopped. The traveller has already seen everything you wrote before the tool call, so never repeat or rephrase it. If you have nothing new to add, end your reply.",
+  "",
+  "The conversation shows the text of your earlier replies, but not the tools you used to write them (\"Your recent tool use\" above lists what it can). Facts in your earlier replies, such as place names, ratings, opening hours and weather, came from your tools, including older replies that aren't listed. Trust them: don't apologise for them or \"correct\" them unless the traveller tells you something has changed.",
+].join("\n");
 
 export async function POST(req: Request) {
   if (!process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY.startsWith("your-")) {
@@ -100,12 +103,7 @@ export async function POST(req: Request) {
   }
 
   // The most recent earlier messages (one extra, to tell whether there are older ones).
-  const { data: recentDesc } = await supabase
-    .from("trip_messages")
-    .select("role, content, created_at")
-    .eq("trip_id", trip.id)
-    .order("id", { ascending: false })
-    .limit(RECENT_MESSAGES + 1);
+  const recentDesc = await loadRecentMessages(supabase, trip.id, RECENT_MESSAGES + 1);
   const hasOlder = (recentDesc?.length ?? 0) > RECENT_MESSAGES;
   const history = (recentDesc ?? []).slice(0, RECENT_MESSAGES).reverse();
   const lastMessageAt = history.at(-1)?.created_at ?? null;
@@ -137,9 +135,12 @@ export async function POST(req: Request) {
       text: [
         preferencesSection(profile as Profile | null),
         tripSection(trip, hasOlder, lastMessageAt),
+        recentToolUseSection(history),
         TOOL_RESULTS_GUIDANCE,
         `Today's date is ${today}.`,
-      ].join("\n\n"),
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
     },
   ];
 
@@ -163,6 +164,7 @@ export async function POST(req: Request) {
       let rounds = 0;
       let finished = false; // the reply ended normally (not cut off or interrupted)
       let itinerarySaved = false; // Katie saved an itinerary herself in this reply
+      const toolNotes: string[] = []; // what she looked up, saved (hidden) with her reply
 
       try {
         // The tool loop: stream Claude's reply; if it asks for tools, run them,
@@ -213,7 +215,10 @@ export async function POST(req: Request) {
           if (transfer) {
             const summary = handoffSummary(transfer.input) ?? "They have a question about using the app.";
             logHandoff(PLANNER_NAME, SUPPORT_NAME, summary, trip.id);
-            say(`${reply.trim() ? "\n\n" : ""}${TO_SUPPORT_MESSAGE}`);
+            // One handover line only: skip the standard one if Katie has already mentioned Amber.
+            if (!reply.toLowerCase().includes(SUPPORT_NAME.toLowerCase())) {
+              say(`${reply.trim() ? "\n\n" : ""}${TO_SUPPORT_MESSAGE}`);
+            }
             send(handoffSignal({ to: "support", summary }));
             break;
           }
@@ -228,6 +233,8 @@ export async function POST(req: Request) {
           const results = await Promise.all(
             toolCalls.map(async (call): Promise<Anthropic.ToolResultBlockParam> => {
               const output = await runTool(call.name, call.input, tripTools);
+              const note = describeToolUse(call.name, call.input, output);
+              if (note) toolNotes.push(note);
               const savedItinerary = (call.input as { itinerary?: unknown } | null)?.itinerary;
               if (call.name === saveTripProgressTool.name && !output.isError && typeof savedItinerary === "string" && savedItinerary.trim()) {
                 itinerarySaved = true;
@@ -267,9 +274,15 @@ export async function POST(req: Request) {
         }
         // Save Katie's reply (even a partial one) so the trip shows it next time.
         if (reply.trim()) {
-          const { error } = await supabase
+          // With a hidden note of the tools she used, so she knows later that her facts were looked up.
+          const tool_notes = toolNotes.length ? toolNotes.join("\n").slice(0, 4000) : null;
+          let { error } = await supabase
             .from("trip_messages")
-            .insert({ trip_id: trip.id, role: "assistant", content: reply });
+            .insert({ trip_id: trip.id, role: "assistant", content: reply, ...(tool_notes ? { tool_notes } : {}) });
+          if (error && tool_notes) {
+            // The tool_notes column may not exist yet (migration not applied): save the reply anyway.
+            ({ error } = await supabase.from("trip_messages").insert({ trip_id: trip.id, role: "assistant", content: reply }));
+          }
           if (error) console.error("Saving Katie's reply failed:", error.message);
           await touchTrip(supabase, trip.id);
         }
@@ -288,6 +301,67 @@ export async function POST(req: Request) {
       "X-Trip-Id": trip.id, // lets the page switch its address to this trip
     },
   });
+}
+
+type HistoryMessage = { role: "user" | "assistant"; content: string; created_at: string; tool_notes: string | null };
+
+// The trip's most recent messages, newest first. Falls back to loading them without tool
+// notes if that column doesn't exist yet, so the conversation is never lost.
+async function loadRecentMessages(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  tripId: string,
+  limit: number,
+): Promise<HistoryMessage[]> {
+  const withNotes = await supabase
+    .from("trip_messages")
+    .select("role, content, created_at, tool_notes")
+    .eq("trip_id", tripId)
+    .order("id", { ascending: false })
+    .limit(limit);
+  if (!withNotes.error) return withNotes.data ?? [];
+
+  const plain = await supabase
+    .from("trip_messages")
+    .select("role, content, created_at")
+    .eq("trip_id", tripId)
+    .order("id", { ascending: false })
+    .limit(limit);
+  return (plain.data ?? []).map((m) => ({ ...m, tool_notes: null }));
+}
+
+// A one-line, hidden note of what a tool call looked up and found, saved with Katie's reply.
+// Saving notes and handing over produce no facts she tells the traveller, so they're skipped.
+function describeToolUse(name: string, input: unknown, output: { content: string; isError: boolean }): string | null {
+  if (name === saveTripProgressTool.name || name === transferToSupportTool.name) return null;
+  const args = (input ?? {}) as Record<string, unknown>;
+  if (output.isError) return `${name}: ${JSON.stringify(args)} → failed (${output.content.slice(0, 120)})`;
+  try {
+    const result = JSON.parse(output.content) as Record<string, unknown>;
+    if (name === "find_places") {
+      const names = ((result.results as { name?: string }[] | undefined) ?? []).map((r) => r.name).filter(Boolean);
+      return `find_places: "${args.query}" in ${args.location}${args.date ? ` on ${args.date}` : ""} → ${names.join(", ") || "no matches"}`;
+    }
+    if (name === "get_weather") {
+      const kinds = [result.forecast ? "forecast" : "", result.typical ? "typical conditions" : ""].filter(Boolean).join(" + ");
+      return `get_weather: ${result.location ?? args.place}, ${args.start_date} to ${args.end_date} → ${kinds || "weather"}`;
+    }
+  } catch {
+    // Not JSON: fall through to a short generic note.
+  }
+  return `${name}: ${JSON.stringify(args).slice(0, 150)} → ${output.content.replace(/\s+/g, " ").slice(0, 150)}`;
+}
+
+// The hidden list of what Katie looked up for her recent replies, so she knows her earlier
+// facts came from real lookups and doesn't "correct" them.
+function recentToolUseSection(history: HistoryMessage[]): string {
+  const lines = history
+    .filter((m) => m.role === "assistant" && m.tool_notes)
+    .map((m) => {
+      const opening = m.content.replace(/\s+/g, " ").trim().slice(0, 70);
+      return `- Your reply starting "${opening}…":\n  ${m.tool_notes!.split("\n").join("\n  ")}`;
+    });
+  if (lines.length === 0) return "";
+  return ["# Your recent tool use", "", "The traveller can't see this. It records what you looked up for your recent replies:", "", ...lines].join("\n");
 }
 
 function looksLikeItinerary(text: string): boolean {

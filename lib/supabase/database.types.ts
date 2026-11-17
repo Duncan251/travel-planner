@@ -55,6 +55,7 @@ export type TripMessageRow = {
   user_id: string;
   role: "user" | "assistant";
   content: string;
+  tool_notes: string | null;
   created_at: string;
 };
 

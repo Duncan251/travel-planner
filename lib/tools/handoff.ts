@@ -32,7 +32,7 @@ export const transferToSupportTool: Anthropic.Tool = {
 
 Don't use it for anything about planning their trip, including questions about places, weather, bookings, prices or itineraries. Those are yours. If a message mixes both, answer the travel part and offer to pass them on for the rest.
 
-After you call it, stop: the traveller sees a short handover message and Amber opens with your summary.`,
+Call it straight away, without writing a handover sentence yourself: the app shows the traveller a short handover message, then Amber opens with your summary.`,
   input_schema: summaryInput,
 };
 
