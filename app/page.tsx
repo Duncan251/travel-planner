@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { isAdminEmail } from "@/lib/admin";
 import { createClient, currentUser } from "@/lib/supabase/server";
 import Chat from "./chat";
 import Welcome from "./welcome";
@@ -21,5 +22,5 @@ export default async function Home({
   const { data: profile } = await supabase.from("profiles").select("user_id").eq("user_id", user.id).maybeSingle();
   if (!profile) redirect("/preferences?first=1");
 
-  return <Chat email={user.email} />;
+  return <Chat email={user.email} isAdmin={isAdminEmail(user.email)} />;
 }

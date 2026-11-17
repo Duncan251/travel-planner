@@ -1,4 +1,5 @@
 import { notFound, redirect } from "next/navigation";
+import { isAdminEmail } from "@/lib/admin";
 import { createClient, currentUser } from "@/lib/supabase/server";
 import Chat from "../../chat";
 
@@ -19,5 +20,13 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
     .eq("trip_id", trip.id)
     .order("id", { ascending: true });
 
-  return <Chat email={user.email} tripId={trip.id} tripTitle={trip.title} initialMessages={messages ?? []} />;
+  return (
+    <Chat
+      email={user.email}
+      isAdmin={isAdminEmail(user.email)}
+      tripId={trip.id}
+      tripTitle={trip.title}
+      initialMessages={messages ?? []}
+    />
+  );
 }

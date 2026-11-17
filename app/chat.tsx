@@ -13,11 +13,13 @@ export type ChatMessage = { role: "user" | "assistant"; content: string };
 // created when the first message is sent.
 export default function Chat({
   email,
+  isAdmin = false,
   tripId: initialTripId = null,
   tripTitle = null,
   initialMessages = [],
 }: {
   email: string | null;
+  isAdmin?: boolean; // decided on the server; only then is the Admin link included
   tripId?: string | null;
   tripTitle?: string | null;
   initialMessages?: ChatMessage[];
@@ -160,6 +162,7 @@ export default function Chat({
           <a href="/trips">Your trips</a>
           <a href="/">New trip</a>
           <a href="/preferences">Preferences</a>
+          {isAdmin && <a href="/admin">Admin</a>}
           <form action={signOut}>
             <button type="submit" className="link-button">
               Sign out

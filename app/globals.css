@@ -114,6 +114,90 @@ body:has(.chat) {
   max-width: 92%;
 }
 
+/* Admin page */
+.admin-range {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin-top: 12px;
+}
+
+.admin-range input,
+.admin-range button,
+.admin-item button {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.admin-range button,
+.admin-item button {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.admin-big {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.admin-table {
+  border-collapse: collapse;
+  margin-top: 8px;
+  min-width: 260px;
+}
+
+.admin-table th,
+.admin-table td {
+  padding: 6px 12px 6px 0;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+
+.admin-table td:not(:first-child),
+.admin-table th:not(:first-child) {
+  text-align: right;
+}
+
+.admin-item {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.admin-item summary {
+  cursor: pointer;
+}
+
+.admin-detail {
+  margin-top: 10px;
+  overflow-wrap: anywhere;
+}
+
+.admin-detail p {
+  margin: 0 0 8px;
+}
+
+.admin-transcript {
+  margin: 10px 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--bg);
+  font-size: 0.9rem;
+  white-space: pre-wrap;
+}
+
 /* "Did this help?" at the end of a support conversation */
 .feedback {
   align-self: flex-start;
